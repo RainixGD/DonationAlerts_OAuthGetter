@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donation Alerts OAuth Helper</title>
+    <link rel="stylesheet" href="./null.css">
+    <link rel="stylesheet" href="./index.css">
+</head>
+<body>
+    <header class="header">DA OAuth Helper</header>
+    <div class="wrapper">
+        <div id="container_1" class="container">
+            <input id="app_id_input" class="input" type="text" placeholder="app_id"/>
+            <input id="app_secret_input" class="input" type="text" placeholder="app_secret"/>
+            <input id="app_redirect_uri_input" class="input" type="text" placeholder="app_redirect_uri"/>
+            <div id="container_1_button" class="button">OK</div>
+        </div>
+        <div id="container_2" class="container">
+            <div id="get_return_link_btn" class="button">get return link</div>
+            <input id="return_link" class="input" type="text" placeholder="return_link"/>
+            <div id="container_2_button" class="button">OK</div>
+        </div>
+        <div id="container_3" class="container2">
+            <div class="label" id="user_id_text"></div>
+            <div class="label" id="access_token_text"></div>
+            <div class="label" id="socket_connection_token_text"></div>
+        </div>
+    </div>
+    <div id="logs" class="logs"></div>
+    <script>
+
+        const data = {
+            appId: "",
+            appSecret: "",
+            appRedirectUri: "",
+            oauthCode: "",
+            access_token: "",
+            socket_connection_token: "",
+            user_id: "",
+        }
+
+        const container_1 = document.getElementById("container_1");
+        const container_2 = document.getElementById("container_2");
+        const container_3 = document.getElementById("container_3");
+        const app_id_input = document.getElementById("app_id_input");
+        const app_secret_input = document.getElementById("app_secret_input");
+        const app_redirect_uri_input = document.getElementById("app_redirect_uri_input");
+        const return_link = document.getElementById("return_link");
+        const container_1_button = document.getElementById("container_1_button");
+        const container_2_button = document.getElementById("container_2_button");
+        const get_return_link_btn = document.getElementById("get_return_link_btn");
+        const logs = document.getElementById("logs");
+
+        const user_id_text = document.getElementById("user_id_text");
+        const access_token_text = document.getElementById("access_token_text");
+        const socket_connection_token_text = document.getElementById("socket_connection_token_text");
+
+        function addLog(log, isProblem){
+            let logComponent = document.createElement("p");
+            logComponent.style.color = isProblem ? "red" : "green";
+            logComponent.innerText = log;
+            logs.append(logComponent);
+            logs.scrollTo(0, logs.scrollHeight);
+        }
+
+        container_1_button.addEventListener("click", ()=>{
+            if (!app_id_input.value) return addLog("app_id is empty", true);
+            if (!app_secret_input.value) return addLog("app_secret is empty", true);
+            if (!app_redirect_uri_input.value) return addLog("app_redirect_uri is empty", true);
+
+            data.appId = app_id_input.value;
+            data.appSecret = app_secret_input.value;
+            data.appRedirectUri = app_redirect_uri_input.value;
+            swapContainers(2);
+            addLog("app_id, app_secret and app_redirect_uri are loaded!", false);
+        })
+
+
+        container_2_button.addEventListener("click", async ()=>{
+            if (!return_link.value) return addLog("return_link is empty", true);
+            let url = new URL(return_link.value);
+            let code = url.searchParams.get('code');
+
+            if (!code) return addLog("can't find code in return link", true);
+
+            data.oauthCode = code;
+            addLog("oauthCode is loaded!", false);
+            let response = await proxyOAuthTokenRequest();
+            if (!response) return addLog("proxyOAuthTokenRequest is failed!", true);
+            data.access_token = response;
+
+            let accountInfo = await proxyAccountInfoCall();
+            if (!accountInfo) return addLog("proxyAccountInfoCall is failed!", true);
+            addLog("proxyAccountInfoCall is ok!", false);
+            addLog("Account info:", false);
+            addLog(JSON.stringify(accountInfo, null, 2), false);
+
+            data.socket_connection_token = accountInfo.data.socket_connection_token;
+            data.user_id = accountInfo.data.id;
+            user_id_text.innerText = "user_id: " + data.user_id;
+            access_token_text.innerText = "access_token: " + data.access_token;
+            socket_connection_token_text.innerText = "socket_connection_token: " + data.socket_connection_token;
+            swapContainers(3);
+        })
+
+
+        get_return_link_btn.addEventListener("click", ()=>{
+            openOauthLink();
+        })
+
+        function openOauthLink(){
+            let link = `https://www.donationalerts.com/oauth/authorize?client_id=${data.appId}&redirect_uri=${data.appRedirectUri}&response_type=code&scope=oauth-user-show%20oauth-donation-subscribe%20oauth-donation-index%20oauth-custom_alert-store`;
+            addLog("Your oauth link:", false);
+            addLog(link, false);
+            window.open(link, '_blank').focus();
+        }
+
+        function swapContainers(num){
+            if (num == 1){
+                container_1.style.display = "block";
+                container_2.style.display = "none";
+                container_3.style.display = "none";
+            }else if (num == 2){
+                container_1.style.display = "none";
+                container_2.style.display = "block";
+                container_3.style.display = "none";
+            }else if (num == 3){
+                container_1.style.display = "none";
+                container_2.style.display = "none";
+                container_3.style.display = "block";
+            }
+        }
+        swapContainers(1);
+
+        async function proxyOAuthTokenRequest() {
+            const url = "http://localhost:3000/getToken";
+            const params = {
+                appId: data.appId,
+                appSecret: data.appSecret,
+                appRedirectUri: data.appRedirectUri,
+                oauthCode: data.oauthCode
+            };
+
+            addLog("Making proxy call with args:", false);
+            addLog(JSON.stringify(params, null, 2), false);
+
+            try {
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json"},
+                    body: JSON.stringify(params)
+                });
+
+                if (!response.ok) {
+                    addLog("Response isn't ok!", true);
+                    addLog(await response.text(), true);
+                    return undefined;
+                }
+                const data = await response.json();
+                addLog("Response is ok!", false);
+                addLog("Token:", false);
+                addLog(data.access_token, false);
+
+                return data.access_token;
+            } catch (error) {
+                addLog("Call failed!", true);
+            }
+            return undefined;
+        }
+
+        async function proxyAccountInfoCall() {
+            const url = "http://localhost:3000/getAccountInfo";
+            const params = {
+                access_token: data.access_token,
+            };
+
+            addLog("Making proxy call with args:", false);
+            addLog(JSON.stringify(params, null, 2), false);
+
+            try {
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json"},
+                    body: JSON.stringify(params)
+                });
+
+                if (!response.ok) {
+                    addLog("Response isn't ok!", true);
+                    addLog(await response.text(), true);
+                    return undefined;
+                }
+
+                const data = await response.json();
+                addLog("Response is ok!", false);
+
+                return data;
+            } catch (error) {
+                addLog("Call failed!", true);
+            }
+            return undefined;
+        }
+    </script>
+</body>
+</html>
